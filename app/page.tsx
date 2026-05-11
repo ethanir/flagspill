@@ -374,7 +374,7 @@ export default function Home() {
       `}</style>
 
       <div className={`sticky top-0 z-10 backdrop-blur-md border-b transition-colors duration-300 ${darkMode ? "bg-stone-900/95 border-stone-700/60" : "bg-[#E8D5B7]/95 border-amber-300/40"}`}>
-        <div className="max-w-[1600px] mx-auto px-6 py-4">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4">
           <div className="flex justify-between items-center mb-3 gap-3">
             <h1 className={`text-3xl font-black tracking-tight flex items-center gap-2 select-none transition-colors duration-300 ${darkMode ? "text-amber-50" : "text-stone-800"}`}>
               <RedFlag size={28} /> flagspill
@@ -413,7 +413,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-6 py-6 pb-32">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 pb-32">
         {loading ? (
           <div className={`text-center py-12 transition-colors duration-300 ${darkMode ? "text-stone-400" : "text-stone-500"}`}>Loading flags...</div>
         ) : posts.length === 0 ? (
@@ -422,7 +422,7 @@ export default function Home() {
             <p className="text-sm">Be the first to spill one</p>
           </div>
         ) : (
-          <div className="flex flex-wrap items-start gap-4">
+          <div className="flex flex-wrap items-start gap-3 sm:gap-4">
             {posts.map((post) => {
               const userVote = userVotes[post.id];
               const yellow = isYellowFlag(post.red_votes, post.green_votes);
@@ -438,7 +438,7 @@ export default function Home() {
                     flexShrink: 1,
                     flexBasis: `${getCardBasis(post.content)}px`,
                   }}
-                  className={`cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[180px]`}
+                  className={`cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
                 >
                   <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
                     <span>anonymous · {timeAgo(post.created_at)}</span>
