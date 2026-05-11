@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { signUp, signIn, signOut, getCurrentProfile, type Profile } from "@/lib/auth";
 
 type Post = {
   id: string;
@@ -120,6 +121,15 @@ function SunIcon({ size = 18 }: { size?: number }) {
   );
 }
 
+function UserIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("Hot");
   const [posts, setPosts] = useState<Post[]>([]);
@@ -134,6 +144,28 @@ export default function Home() {
   const [newComment, setNewComment] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+
+  // Auth state
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  // Load current profile on mount + subscribe to auth state changes
+  useEffect(() => {
+    getCurrentProfile().then(setProfile);
+    const { data: subscription } = supabase.auth.onAuthStateChange(async () => {
+      const p = await getCurrentProfile();
+      setProfile(p);
+    });
+    return () => {
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     fetchPosts();
@@ -157,7 +189,7 @@ export default function Home() {
 
   // Lock background scroll when any modal is open
   useEffect(() => {
-    if (openPost || showModal) {
+    if (openPost || showModal || showAuthModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -165,7 +197,7 @@ export default function Home() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [openPost, showModal]);
+  }, [openPost, showModal, showAuthModal]);
 
   function toggleDarkMode() {
     setDarkMode((prev) => {
@@ -173,6 +205,43 @@ export default function Home() {
       localStorage.setItem("flagspill_dark", next.toString());
       return next;
     });
+  }
+
+  function openAuthModal(mode: "signin" | "signup") {
+    setAuthMode(mode);
+    setAuthUsername("");
+    setAuthPassword("");
+    setAuthError("");
+    setShowAuthModal(true);
+  }
+
+  async function handleAuthSubmit() {
+    if (!authUsername.trim() || !authPassword || authSubmitting) return;
+    setAuthSubmitting(true);
+    setAuthError("");
+
+    const result =
+      authMode === "signup"
+        ? await signUp(authUsername, authPassword)
+        : await signIn(authUsername, authPassword);
+
+    if (!result.ok) {
+      setAuthError(result.error || "Something went wrong.");
+      setAuthSubmitting(false);
+      return;
+    }
+
+    // Refresh profile after success
+    const p = await getCurrentProfile();
+    setProfile(p);
+    setShowAuthModal(false);
+    setAuthSubmitting(false);
+  }
+
+  async function handleSignOut() {
+    await signOut();
+    setProfile(null);
+    setShowProfileMenu(false);
   }
 
   async function fetchPosts() {
@@ -404,17 +473,33 @@ export default function Home() {
               </span>
               flagspill
             </h1>
-            <button
-              onClick={toggleDarkMode}
-              aria-label="Toggle dark mode"
-              className={`cursor-pointer w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 ${
-                darkMode
-                  ? "bg-stone-700 text-amber-200 hover:bg-stone-600"
-                  : "bg-white/70 text-stone-700 hover:bg-white hover:shadow-sm"
-              }`}
-            >
-              {darkMode ? <SunIcon /> : <MoonIcon />}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => (profile ? setShowProfileMenu((s) => !s) : openAuthModal("signin"))}
+                aria-label={profile ? "Profile menu" : "Sign in"}
+                className={`cursor-pointer h-10 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 ${
+                  profile ? "px-3 gap-2" : "w-10"
+                } ${
+                  darkMode
+                    ? "bg-stone-700 text-amber-200 hover:bg-stone-600"
+                    : "bg-white/70 text-stone-700 hover:bg-white hover:shadow-sm"
+                }`}
+              >
+                <UserIcon />
+                {profile && <span className="text-sm font-semibold">@{profile.username}</span>}
+              </button>
+              <button
+                onClick={toggleDarkMode}
+                aria-label="Toggle dark mode"
+                className={`cursor-pointer w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 ${
+                  darkMode
+                    ? "bg-stone-700 text-amber-200 hover:bg-stone-600"
+                    : "bg-white/70 text-stone-700 hover:bg-white hover:shadow-sm"
+                }`}
+              >
+                {darkMode ? <SunIcon /> : <MoonIcon />}
+              </button>
+            </div>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {TABS.map((tab) => (
@@ -670,6 +755,116 @@ export default function Home() {
                 {submitting ? "Checking..." : "Spill"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auth modal (sign in / sign up) */}
+      {showAuthModal && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setShowAuthModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex gap-2 mb-5">
+              <button
+                onClick={() => { setAuthMode("signin"); setAuthError(""); }}
+                className={`cursor-pointer flex-1 py-2 rounded-full text-sm font-semibold transition-all duration-150 ${
+                  authMode === "signin"
+                    ? "bg-stone-800 text-white"
+                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                }`}
+              >
+                Sign in
+              </button>
+              <button
+                onClick={() => { setAuthMode("signup"); setAuthError(""); }}
+                className={`cursor-pointer flex-1 py-2 rounded-full text-sm font-semibold transition-all duration-150 ${
+                  authMode === "signup"
+                    ? "bg-stone-800 text-white"
+                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                }`}
+              >
+                Sign up
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={authUsername}
+              onChange={(e) => { setAuthUsername(e.target.value); setAuthError(""); }}
+              placeholder="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full mb-3 px-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 text-stone-800"
+              disabled={authSubmitting}
+              maxLength={20}
+            />
+            <input
+              type="password"
+              value={authPassword}
+              onChange={(e) => { setAuthPassword(e.target.value); setAuthError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleAuthSubmit()}
+              placeholder="password"
+              className="w-full mb-3 px-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 text-stone-800"
+              disabled={authSubmitting}
+            />
+
+            {authError && (
+              <div className="mb-3 p-3 rounded-2xl bg-red-50 text-red-700 text-sm">{authError}</div>
+            )}
+
+            <button
+              onClick={handleAuthSubmit}
+              disabled={!authUsername.trim() || !authPassword || authSubmitting}
+              className={`w-full py-3 rounded-full font-semibold transition-all duration-150 ${
+                !authUsername.trim() || !authPassword || authSubmitting
+                  ? "bg-stone-300 text-white cursor-not-allowed"
+                  : "bg-stone-800 text-white hover:bg-stone-900 hover:scale-[1.02] active:scale-95 cursor-pointer"
+              }`}
+            >
+              {authSubmitting
+                ? "..."
+                : authMode === "signup"
+                ? "Create account"
+                : "Sign in"}
+            </button>
+
+            <p className="text-xs text-stone-400 text-center mt-4">
+              {authMode === "signup"
+                ? "Username, password. No email, no phone. Posts stay anonymous."
+                : "Welcome back."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Profile dropdown (when logged in and toggled) */}
+      {profile && showProfileMenu && (
+        <div
+          className="fixed inset-0 z-30 cursor-pointer"
+          onClick={() => setShowProfileMenu(false)}
+        >
+          <div
+            className="absolute right-4 top-20 bg-white rounded-2xl p-4 shadow-2xl w-64 cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 pb-3 border-b border-stone-100">
+              <div className="font-bold text-stone-800">@{profile.username}</div>
+              <div className="text-xs text-stone-500 mt-0.5">
+                <span className="text-amber-700 font-bold">{profile.karma}</span> karma
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="cursor-pointer w-full text-left text-sm text-stone-600 hover:bg-stone-100 rounded-lg px-3 py-2 transition-colors"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       )}
