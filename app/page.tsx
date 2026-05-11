@@ -371,6 +371,11 @@ export default function Home() {
           animation: flag-sway 3s ease-in-out infinite;
           transform-origin: 25% 90%;
         }
+        @media (max-width: 639px) {
+          .post-card {
+            flex-basis: 120px !important;
+          }
+        }
       `}</style>
 
       <div className={`sticky top-0 z-10 backdrop-blur-md border-b transition-colors duration-300 ${darkMode ? "bg-stone-900/95 border-stone-700/60" : "bg-[#E8D5B7]/95 border-amber-300/40"}`}>
@@ -438,7 +443,7 @@ export default function Home() {
                     flexShrink: 1,
                     flexBasis: `${getCardBasis(post.content)}px`,
                   }}
-                  className={`cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
+                  className={`post-card cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
                 >
                   <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
                     <span>anonymous · {timeAgo(post.created_at)}</span>
