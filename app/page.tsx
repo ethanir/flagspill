@@ -36,6 +36,7 @@ function isYellowFlag(red: number, green: number) {
 
 function timeAgo(dateString: string) {
   const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
+  if (seconds < 0) return "just now";
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
@@ -77,15 +78,15 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [newPost, setNewPost] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [userVotes, setUserVotes] = useState<Record<string, "red" | "green" | null>>({});
   const [openPost, setOpenPost] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
 
-  // Load posts from Supabase + comment counts
   useEffect(() => {
     fetchPosts();
-    // Load user's votes from localStorage so they persist across refreshes for this user
     const stored = localStorage.getItem("flagspill_votes");
     if (stored) {
       try {
@@ -94,7 +95,6 @@ export default function Home() {
     }
   }, [activeTab]);
 
-  // Load comments when a post is opened
   useEffect(() => {
     if (openPost) {
       fetchComments(openPost);
@@ -107,7 +107,6 @@ export default function Home() {
     setLoading(true);
     let query = supabase.from("posts").select("*");
 
-    // Sort based on active tab
     if (activeTab === "New") {
       query = query.order("created_at", { ascending: false });
     } else if (activeTab === "Top Today") {
@@ -119,7 +118,6 @@ export default function Home() {
     } else if (activeTab === "All Time") {
       query = query.order("red_votes", { ascending: false });
     } else {
-      // Hot - mix of recent + popular (default: order by total votes, recent first)
       query = query.order("created_at", { ascending: false });
     }
 
@@ -131,7 +129,6 @@ export default function Home() {
       return;
     }
 
-    // Fetch comment counts for each post
     if (data && data.length > 0) {
       const postIds = data.map((p) => p.id);
       const { data: commentData } = await supabase
@@ -178,7 +175,6 @@ export default function Home() {
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
 
-    // Calculate new vote counts
     let newRed = post.red_votes;
     let newGreen = post.green_votes;
     if (currentVote === "red") newRed -= 1;
@@ -188,7 +184,6 @@ export default function Home() {
       else newGreen += 1;
     }
 
-    // Optimistic UI update
     setPosts((prev) =>
       prev.map((p) => (p.id === postId ? { ...p, red_votes: newRed, green_votes: newGreen } : p))
     );
@@ -197,7 +192,6 @@ export default function Home() {
     setUserVotes(newVotes);
     localStorage.setItem("flagspill_votes", JSON.stringify(newVotes));
 
-    // Update database
     const { error } = await supabase
       .from("posts")
       .update({ red_votes: newRed, green_votes: newGreen })
@@ -205,7 +199,6 @@ export default function Home() {
 
     if (error) {
       console.error("Error updating vote:", error);
-      // Roll back on error
       fetchPosts();
     }
   }
@@ -216,30 +209,69 @@ export default function Home() {
   }
 
   async function handleSubmit() {
-    if (!newPost.trim()) return;
+    if (!newPost.trim() || submitting) return;
+    setSubmitting(true);
+    setSubmitError("");
 
-    const { data, error } = await supabase
-      .from("posts")
-      .insert([{ content: newPost.trim() }])
-      .select()
-      .single();
+    try {
+      // Run moderation check first
+      const modResponse = await fetch("/api/moderate-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newPost.trim() }),
+      });
 
-    if (error) {
-      console.error("Error creating post:", error);
-      alert("Couldn't post. Check console for error.");
-      return;
+      const modResult = await modResponse.json();
+
+      if (!modResult.ok) {
+        setSubmitError(modResult.reason || "Couldn't post that.");
+        setSubmitting(false);
+        return;
+      }
+
+      // Moderation passed - save to db
+      const { data, error } = await supabase
+        .from("posts")
+        .insert([{ content: newPost.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating post:", error);
+        setSubmitError("Couldn't save. Try again.");
+        setSubmitting(false);
+        return;
+      }
+
+      if (data) {
+        setPosts([{ ...data, comment_count: 0 }, ...posts]);
+      }
+
+      setNewPost("");
+      setShowModal(false);
+    } catch (e) {
+      console.error("Submit error:", e);
+      setSubmitError("Network error. Try again.");
+    } finally {
+      setSubmitting(false);
     }
-
-    if (data) {
-      setPosts([{ ...data, comment_count: 0 }, ...posts]);
-    }
-
-    setNewPost("");
-    setShowModal(false);
   }
 
   async function handleCommentSubmit() {
     if (!newComment.trim() || !openPost) return;
+
+    // Also moderate comments
+    const modResponse = await fetch("/api/moderate-post", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: newComment.trim() }),
+    });
+
+    const modResult = await modResponse.json();
+    if (!modResult.ok) {
+      alert(modResult.reason || "Couldn't post that comment.");
+      return;
+    }
 
     const { data, error } = await supabase
       .from("comments")
@@ -254,7 +286,6 @@ export default function Home() {
 
     if (data) {
       setComments([data, ...comments]);
-      // Update comment count on the post
       setPosts((prev) =>
         prev.map((p) =>
           p.id === openPost ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p
@@ -359,7 +390,10 @@ export default function Home() {
       </div>
 
       <button
-        onClick={() => setShowModal(true)}
+        onClick={() => {
+          setShowModal(true);
+          setSubmitError("");
+        }}
         className="fixed bottom-6 right-6 bg-stone-800 hover:bg-stone-900 text-white rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 transition-all flex items-center gap-2 z-30"
       >
         <span className="text-lg">+</span>
@@ -427,13 +461,38 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-end sm:items-center justify-center p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-xl font-bold text-stone-800 mb-4">Spill the flag</h2>
-            <textarea value={newPost} onChange={(e) => setNewPost(e.target.value)} placeholder="What's the flag?" className="w-full h-32 p-4 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none text-stone-800" maxLength={280} autoFocus />
-            <div className="flex justify-between items-center mt-2 mb-4">
+            <textarea
+              value={newPost}
+              onChange={(e) => {
+                setNewPost(e.target.value);
+                setSubmitError("");
+              }}
+              placeholder="What's the flag?"
+              className="w-full h-32 p-4 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none text-stone-800"
+              maxLength={280}
+              autoFocus
+            />
+            <div className="flex justify-between items-center mt-2 mb-2">
               <span className="text-xs text-stone-400">{newPost.length}/280 · posted anonymously</span>
             </div>
+            {submitError && (
+              <div className="mb-3 p-3 rounded-2xl bg-red-50 text-red-700 text-sm">{submitError}</div>
+            )}
             <div className="flex gap-3">
-              <button onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-full font-semibold text-stone-600 hover:bg-stone-100 transition-colors">Cancel</button>
-              <button onClick={handleSubmit} disabled={!newPost.trim()} className="flex-1 py-3 rounded-full font-semibold bg-stone-800 text-white hover:bg-stone-900 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors">Spill</button>
+              <button
+                onClick={() => setShowModal(false)}
+                disabled={submitting}
+                className="flex-1 py-3 rounded-full font-semibold text-stone-600 hover:bg-stone-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!newPost.trim() || submitting}
+                className="flex-1 py-3 rounded-full font-semibold bg-stone-800 text-white hover:bg-stone-900 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {submitting ? "Checking..." : "Spill"}
+              </button>
             </div>
           </div>
         </div>
