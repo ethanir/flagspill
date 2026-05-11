@@ -27,9 +27,40 @@ const wrapStyle: React.CSSProperties = {
   whiteSpace: "normal",
 };
 
+function getPostTextClass(text: string) {
+  const len = text.trim().length;
+  if (len <= 5) return "text-4xl font-black leading-tight tracking-tight";
+  if (len <= 12) return "text-3xl font-bold leading-tight";
+  if (len <= 22) return "text-2xl font-bold leading-snug";
+  if (len <= 40) return "text-xl font-semibold leading-snug";
+  if (len <= 70) return "text-lg font-semibold leading-snug";
+  if (len <= 120) return "text-base font-medium leading-snug";
+  return "text-sm font-medium leading-snug";
+}
+
+function getCardBasis(text: string): number {
+  const len = text.trim().length;
+  if (len <= 5) return 180;
+  if (len <= 12) return 200;
+  if (len <= 22) return 220;
+  if (len <= 40) return 240;
+  if (len <= 70) return 260;
+  if (len <= 120) return 280;
+  return 300;
+}
+
+function getCardBgClass(red: number, green: number): string {
+  const total = red + green;
+  if (total === 0) return "bg-white";
+  const redPct = red / total;
+  if (redPct >= 0.4 && redPct <= 0.6) return "bg-amber-100";
+  if (redPct > 0.6) return "bg-red-100";
+  return "bg-emerald-100";
+}
+
 function isYellowFlag(red: number, green: number) {
   const total = red + green;
-  if (total < 5) return false;
+  if (total === 0) return false;
   const redPct = red / total;
   return redPct >= 0.4 && redPct <= 0.6;
 }
@@ -204,11 +235,6 @@ export default function Home() {
     }
   }
 
-  function handleYellowClick(e: React.MouseEvent, postId: string) {
-    e.stopPropagation();
-    setOpenPost(postId);
-  }
-
   async function handleSubmit() {
     if (!newPost.trim() || submitting) return;
     setSubmitting(true);
@@ -302,9 +328,23 @@ export default function Home() {
   }
 
   const activePost = posts.find((p) => p.id === openPost);
+  const activeUserVote = activePost ? userVotes[activePost.id] : null;
 
   return (
     <main className="min-h-screen bg-[#E8D5B7]">
+      <style>{`
+        @keyframes flag-sway {
+          0%, 100% { transform: rotate(0deg); }
+          25% { transform: rotate(-7deg); }
+          50% { transform: rotate(0deg); }
+          75% { transform: rotate(7deg); }
+        }
+        .flag-sway {
+          animation: flag-sway 3s ease-in-out infinite;
+          transform-origin: 25% 90%;
+        }
+      `}</style>
+
       <div className="sticky top-0 z-10 bg-[#E8D5B7]/95 backdrop-blur-md border-b border-amber-300/40">
         <div className="max-w-[1600px] mx-auto px-6 py-4">
           <h1 className="text-3xl font-black text-stone-800 mb-3 tracking-tight flex items-center gap-2 select-none">
@@ -337,34 +377,40 @@ export default function Home() {
             <p className="text-sm">Be the first to spill one</p>
           </div>
         ) : (
-          <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4">
+          <div className="flex flex-wrap items-start gap-4">
             {posts.map((post) => {
               const userVote = userVotes[post.id];
               const yellow = isYellowFlag(post.red_votes, post.green_votes);
+              const bgClass = getCardBgClass(post.red_votes, post.green_votes);
 
               return (
                 <div
                   key={post.id}
                   onClick={() => setOpenPost(post.id)}
-                  style={{ overflow: "hidden", maxWidth: "100%" }}
-                  className="cursor-pointer bg-white rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 mb-4 break-inside-avoid block w-full"
+                  style={{
+                    overflow: "hidden",
+                    flexGrow: 1,
+                    flexShrink: 1,
+                    flexBasis: `${getCardBasis(post.content)}px`,
+                  }}
+                  className={`cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[180px]`}
                 >
-                  <div className="flex justify-between items-center mb-2 text-xs text-stone-400 select-none">
+                  <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
                     <span>anonymous · {timeAgo(post.created_at)}</span>
                     <span className="flex items-center gap-1">💬 {post.comment_count || 0}</span>
                   </div>
 
-                  <p style={wrapStyle} className="text-stone-800 text-[15px] leading-snug mb-3 font-medium">
+                  <p style={wrapStyle} className={`text-stone-800 mb-3 ${getPostTextClass(post.content)}`}>
                     {post.content}
                   </p>
 
-                  <div className="flex justify-between items-center relative">
+                  <div className="flex justify-between items-center relative gap-2">
                     <button
                       onClick={(e) => handleVote(e, post.id, "red")}
                       className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-150 active:scale-90 ${
                         userVote === "red"
                           ? "bg-red-500 text-white scale-105 shadow"
-                          : "bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105"
+                          : "bg-white/80 text-red-600 hover:bg-white hover:scale-105"
                       }`}
                     >
                       <RedFlag size={13} />
@@ -372,13 +418,11 @@ export default function Home() {
                     </button>
 
                     {yellow && (
-                      <button
-                        onClick={(e) => handleYellowClick(e, post.id)}
-                        className="cursor-pointer absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-8 h-8 rounded-full bg-yellow-300 shadow-md shadow-yellow-400/60 animate-pulse hover:animate-none hover:scale-110 active:scale-95 transition-transform duration-150"
-                        title="Contested - tap to see comments"
-                      >
-                        <YellowFlag size={14} />
-                      </button>
+                      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                        <div className="flag-sway">
+                          <YellowFlag size={24} />
+                        </div>
+                      </div>
                     )}
 
                     <button
@@ -386,7 +430,7 @@ export default function Home() {
                       className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-150 active:scale-90 ${
                         userVote === "green"
                           ? "bg-emerald-500 text-white scale-105 shadow"
-                          : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105"
+                          : "bg-white/80 text-emerald-600 hover:bg-white hover:scale-105"
                       }`}
                     >
                       <span>{post.green_votes}</span>
@@ -432,16 +476,30 @@ export default function Home() {
             <p style={wrapStyle} className="text-stone-800 text-lg leading-relaxed mb-4">
               {activePost.content}
             </p>
-            <div className="flex gap-2 mb-6 text-sm flex-wrap">
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 text-red-600 font-semibold">
+            <div className="flex gap-2 mb-6 text-sm flex-wrap items-center">
+              <button
+                onClick={(e) => handleVote(e, activePost.id, "red")}
+                className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-all duration-150 active:scale-90 ${
+                  activeUserVote === "red"
+                    ? "bg-red-500 text-white scale-105 shadow"
+                    : "bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105"
+                }`}
+              >
                 <RedFlag size={14} /> {activePost.red_votes}
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 font-semibold">
+              </button>
+              <button
+                onClick={(e) => handleVote(e, activePost.id, "green")}
+                className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-all duration-150 active:scale-90 ${
+                  activeUserVote === "green"
+                    ? "bg-emerald-500 text-white scale-105 shadow"
+                    : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105"
+                }`}
+              >
                 <GreenFlag size={14} /> {activePost.green_votes}
-              </span>
+              </button>
               {isYellowFlag(activePost.red_votes, activePost.green_votes) && (
-                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 font-semibold">
-                  <YellowFlag size={14} /> contested
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 font-semibold">
+                  <YellowFlag size={14} /> Yellow Flag
                 </span>
               )}
             </div>
