@@ -11,6 +11,8 @@ type Post = {
   green_votes: number;
   created_at: string;
   comment_count?: number;
+  author_id?: string | null;
+  author?: { username: string } | null;
 };
 
 type Comment = {
@@ -18,6 +20,8 @@ type Comment = {
   post_id: string;
   content: string;
   created_at: string;
+  author_id?: string | null;
+  author?: { username: string } | null;
 };
 
 const TABS = ["Hot", "New", "Top Today", "Top Week", "All Time"];
@@ -246,7 +250,9 @@ export default function Home() {
 
   async function fetchPosts() {
     setLoading(true);
-    let query = supabase.from("posts").select("*");
+    let query = supabase
+      .from("posts")
+      .select("*, author:profiles!posts_author_id_fkey(username)");
 
     if (activeTab === "New") {
       query = query.order("created_at", { ascending: false });
@@ -298,7 +304,7 @@ export default function Home() {
   async function fetchComments(postId: string) {
     const { data, error } = await supabase
       .from("comments")
-      .select("*")
+      .select("*, author:profiles!comments_author_id_fkey(username)")
       .eq("post_id", postId)
       .order("created_at", { ascending: false });
 
@@ -325,6 +331,14 @@ export default function Home() {
       else newGreen += 1;
     }
 
+    // Determine karma delta:
+    //  - new vote (no previous): voter +1, author +1
+    //  - undo (same vote clicked again): voter -1, author -1
+    //  - switch (red ↔ green): no change
+    let karmaDelta = 0;
+    if (!currentVote) karmaDelta = 1;
+    else if (currentVote === voteType) karmaDelta = -1;
+
     setPosts((prev) =>
       prev.map((p) => (p.id === postId ? { ...p, red_votes: newRed, green_votes: newGreen } : p))
     );
@@ -341,6 +355,23 @@ export default function Home() {
     if (error) {
       console.error("Error updating vote:", error);
       fetchPosts();
+      return;
+    }
+
+    // Karma updates (only for logged-in users, only when delta != 0)
+    if (profile && karmaDelta !== 0) {
+      await supabase.rpc("increment_karma", {
+        target_user_id: profile.id,
+        amount: karmaDelta,
+      });
+      setProfile({ ...profile, karma: profile.karma + karmaDelta });
+
+      if (post.author_id && post.author_id !== profile.id) {
+        await supabase.rpc("increment_karma", {
+          target_user_id: post.author_id,
+          amount: karmaDelta,
+        });
+      }
     }
   }
 
@@ -366,8 +397,8 @@ export default function Home() {
 
       const { data, error } = await supabase
         .from("posts")
-        .insert([{ content: newPost.trim() }])
-        .select()
+        .insert([{ content: newPost.trim(), author_id: profile?.id ?? null }])
+        .select("*, author:profiles!posts_author_id_fkey(username)")
         .single();
 
       if (error) {
@@ -411,8 +442,14 @@ export default function Home() {
 
       const { data, error } = await supabase
         .from("comments")
-        .insert([{ post_id: openPost, content: newComment.trim() }])
-        .select()
+        .insert([
+          {
+            post_id: openPost,
+            content: newComment.trim(),
+            author_id: profile?.id ?? null,
+          },
+        ])
+        .select("*, author:profiles!comments_author_id_fkey(username)")
         .single();
 
       if (error) {
@@ -428,6 +465,23 @@ export default function Home() {
             p.id === openPost ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p
           )
         );
+
+        // Karma: +1 to commenter (self), +1 to post author (if different)
+        if (profile) {
+          await supabase.rpc("increment_karma", {
+            target_user_id: profile.id,
+            amount: 1,
+          });
+          setProfile({ ...profile, karma: profile.karma + 1 });
+
+          const postAuthorId = posts.find((p) => p.id === openPost)?.author_id;
+          if (postAuthorId && postAuthorId !== profile.id) {
+            await supabase.rpc("increment_karma", {
+              target_user_id: postAuthorId,
+              amount: 1,
+            });
+          }
+        }
       }
 
       setNewComment("");
@@ -551,7 +605,14 @@ export default function Home() {
                   className={`post-card ${post.content.trim().length > 70 ? "post-card-wide" : ""} cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
                 >
                   <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
-                    <span>anonymous · {timeAgo(post.created_at)}</span>
+                    <span>
+                      {post.author?.username ? (
+                        <span className="font-semibold text-stone-700">@{post.author.username}</span>
+                      ) : (
+                        "anonymous"
+                      )}{" "}
+                      · {timeAgo(post.created_at)}
+                    </span>
                     <span className="flex items-center gap-1">💬 {post.comment_count || 0}</span>
                   </div>
 
@@ -624,7 +685,14 @@ export default function Home() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-4 text-xs text-stone-400">
-              <span>anonymous · {timeAgo(activePost.created_at)}</span>
+              <span>
+                {activePost.author?.username ? (
+                  <span className="font-semibold text-stone-700">@{activePost.author.username}</span>
+                ) : (
+                  "anonymous"
+                )}{" "}
+                · {timeAgo(activePost.created_at)}
+              </span>
               <button
                 onClick={() => setOpenPost(null)}
                 className="cursor-pointer text-stone-400 hover:text-stone-700 hover:scale-110 active:scale-95 transition-all duration-150 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100"
@@ -670,7 +738,14 @@ export default function Home() {
                 ) : (
                   comments.map((c) => (
                     <div key={c.id} style={wrapStyle} className="bg-stone-50 rounded-2xl p-3 text-sm">
-                      <div className="text-xs text-stone-400 mb-1">anonymous · {timeAgo(c.created_at)}</div>
+                      <div className="text-xs text-stone-400 mb-1">
+                        {c.author?.username ? (
+                          <span className="font-semibold text-stone-700">@{c.author.username}</span>
+                        ) : (
+                          "anonymous"
+                        )}{" "}
+                        · {timeAgo(c.created_at)}
+                      </div>
                       <div className="text-stone-700">{c.content}</div>
                     </div>
                   ))
@@ -726,7 +801,12 @@ export default function Home() {
               disabled={submitting}
             />
             <div className="flex justify-between items-center mt-2 mb-2">
-              <span className="text-xs text-stone-400">{newPost.length}/280 · posted anonymously</span>
+              <span className="text-xs text-stone-400">
+                {newPost.length}/280 ·{" "}
+                {profile
+                  ? `posting as @${profile.username}`
+                  : "posted anonymously"}
+              </span>
             </div>
             {submitError && (
               <div className="mb-3 p-3 rounded-2xl bg-red-50 text-red-700 text-sm">{submitError}</div>
@@ -836,7 +916,7 @@ export default function Home() {
 
             <p className="text-xs text-stone-400 text-center mt-4">
               {authMode === "signup"
-                ? "Username, password. No email, no phone. Posts stay anonymous."
+                ? "Username, password. No email, no phone. Posts will show your @name."
                 : "Welcome back."}
             </p>
           </div>
