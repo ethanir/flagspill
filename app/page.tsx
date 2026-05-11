@@ -1,39 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
-const MOCK_POSTS = [
-  { id: "1", content: "He texts back instantly but never plans actual dates", red_votes: 247, green_votes: 12, created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), comment_count: 34 },
-  { id: "2", content: "She still has photos with her ex on Instagram from 3 years ago", red_votes: 89, green_votes: 96, created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(), comment_count: 21 },
-  { id: "3", content: "Brings their mom up in conversation every 5 minutes", red_votes: 412, green_votes: 88, created_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(), comment_count: 67 },
-  { id: "4", content: "Asks for the wifi password before saying hello", red_votes: 178, green_votes: 45, created_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(), comment_count: 12 },
-  { id: "5", content: "Splits the bill down to the penny on a first date with a calculator and a spreadsheet to track who owes what", red_votes: 523, green_votes: 401, created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), comment_count: 89 },
-  { id: "6", content: "Has a 'guys trip' to Vegas every 3 months", red_votes: 78, green_votes: 82, created_at: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(), comment_count: 45 },
-  { id: "7", content: "Won't post you on social media", red_votes: 334, green_votes: 67, created_at: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(), comment_count: 102 },
-  { id: "8", content: "Owns 14 cats", red_votes: 12, green_votes: 11, created_at: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(), comment_count: 8 },
-  { id: "9", content: "Calls their ex 'crazy' within the first hour of meeting and goes on a 20 minute rant about her", red_votes: 891, green_votes: 23, created_at: new Date(Date.now() - 1000 * 60 * 60 * 60).toISOString(), comment_count: 156 },
-  { id: "10", content: "Doesn't tip", red_votes: 445, green_votes: 78, created_at: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(), comment_count: 32 },
-  { id: "11", content: "Still lives with mom at 35", red_votes: 234, green_votes: 245, created_at: new Date(Date.now() - 1000 * 60 * 60 * 80).toISOString(), comment_count: 87 },
-  { id: "12", content: "Always pays in cash and refuses to use Venmo or any digital payment app because they don't trust technology", red_votes: 167, green_votes: 198, created_at: new Date(Date.now() - 1000 * 60 * 60 * 96).toISOString(), comment_count: 41 },
-  { id: "13", content: "Vapes indoors", red_votes: 312, green_votes: 89, created_at: new Date(Date.now() - 1000 * 60 * 60 * 100).toISOString(), comment_count: 22 },
-  { id: "14", content: "Has a framed photo of themselves above their bed", red_votes: 567, green_votes: 34, created_at: new Date(Date.now() - 1000 * 60 * 60 * 110).toISOString(), comment_count: 78 },
-  { id: "15", content: "Talks to their pet in a baby voice 24/7 even in public around other adults", red_votes: 123, green_votes: 287, created_at: new Date(Date.now() - 1000 * 60 * 60 * 120).toISOString(), comment_count: 19 },
-  { id: "16", content: "Snores like a freight train", red_votes: 88, green_votes: 92, created_at: new Date(Date.now() - 1000 * 60 * 60 * 130).toISOString(), comment_count: 15 },
-  { id: "17", content: "Refuses to try any new food ever", red_votes: 256, green_votes: 78, created_at: new Date(Date.now() - 1000 * 60 * 60 * 140).toISOString(), comment_count: 38 },
-  { id: "18", content: "Posts gym selfies daily", red_votes: 178, green_votes: 165, created_at: new Date(Date.now() - 1000 * 60 * 60 * 150).toISOString(), comment_count: 54 },
-];
+type Post = {
+  id: string;
+  content: string;
+  red_votes: number;
+  green_votes: number;
+  created_at: string;
+  comment_count?: number;
+};
+
+type Comment = {
+  id: string;
+  post_id: string;
+  content: string;
+  created_at: string;
+};
 
 const TABS = ["Hot", "New", "Top Today", "Top Week", "All Time"];
 
+const wrapStyle: React.CSSProperties = {
+  wordBreak: "break-word",
+  overflowWrap: "anywhere",
+  whiteSpace: "normal",
+};
+
+function getPostTextClass(text: string) {
+  const len = text.trim().length;
+  if (len <= 5) return "text-4xl font-black leading-tight tracking-tight";
+  if (len <= 12) return "text-3xl font-bold leading-tight";
+  if (len <= 22) return "text-2xl font-bold leading-snug";
+  if (len <= 40) return "text-xl font-semibold leading-snug";
+  if (len <= 70) return "text-lg font-semibold leading-snug";
+  if (len <= 120) return "text-base font-medium leading-snug";
+  return "text-sm font-medium leading-snug";
+}
+
+function getCardBasis(text: string): number {
+  const len = text.trim().length;
+  if (len <= 5) return 180;
+  if (len <= 12) return 200;
+  if (len <= 22) return 220;
+  if (len <= 40) return 240;
+  if (len <= 70) return 260;
+  if (len <= 120) return 280;
+  return 300;
+}
+
+function getCardBgClass(red: number, green: number): string {
+  const total = red + green;
+  if (total === 0) return "bg-white";
+  const redPct = red / total;
+  if (redPct >= 0.4 && redPct <= 0.6) return "bg-amber-100";
+  if (redPct > 0.6) return "bg-red-100";
+  return "bg-emerald-100";
+}
+
 function isYellowFlag(red: number, green: number) {
   const total = red + green;
-  if (total < 5) return false;
+  if (total === 0) return false;
   const redPct = red / total;
   return redPct >= 0.4 && redPct <= 0.6;
 }
 
 function timeAgo(dateString: string) {
   const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
+  if (seconds < 0) return "just now";
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
@@ -69,70 +103,332 @@ function GreenFlag({ size = 16 }: { size?: number }) {
   );
 }
 
+function MoonIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
+function SunIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("Hot");
-  const [posts, setPosts] = useState(MOCK_POSTS);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [newPost, setNewPost] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [userVotes, setUserVotes] = useState<Record<string, "red" | "green" | null>>({});
   const [openPost, setOpenPost] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
-  const handleVote = (e: React.MouseEvent, postId: string, voteType: "red" | "green") => {
+  useEffect(() => {
+    fetchPosts();
+    const stored = localStorage.getItem("flagspill_votes");
+    if (stored) {
+      try {
+        setUserVotes(JSON.parse(stored));
+      } catch {}
+    }
+    const storedDark = localStorage.getItem("flagspill_dark");
+    if (storedDark === "true") setDarkMode(true);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (openPost) {
+      fetchComments(openPost);
+    } else {
+      setComments([]);
+    }
+  }, [openPost]);
+
+  // Lock background scroll when any modal is open
+  useEffect(() => {
+    if (openPost || showModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [openPost, showModal]);
+
+  function toggleDarkMode() {
+    setDarkMode((prev) => {
+      const next = !prev;
+      localStorage.setItem("flagspill_dark", next.toString());
+      return next;
+    });
+  }
+
+  async function fetchPosts() {
+    setLoading(true);
+    let query = supabase.from("posts").select("*");
+
+    if (activeTab === "New") {
+      query = query.order("created_at", { ascending: false });
+    } else if (activeTab === "Top Today") {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      query = query.gte("created_at", oneDayAgo).order("red_votes", { ascending: false });
+    } else if (activeTab === "Top Week") {
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      query = query.gte("created_at", oneWeekAgo).order("red_votes", { ascending: false });
+    } else if (activeTab === "All Time") {
+      query = query.order("red_votes", { ascending: false });
+    } else {
+      query = query.order("created_at", { ascending: false });
+    }
+
+    const { data, error } = await query.limit(100);
+
+    if (error) {
+      console.error("Error fetching posts:", error);
+      setLoading(false);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const postIds = data.map((p) => p.id);
+      const { data: commentData } = await supabase
+        .from("comments")
+        .select("post_id")
+        .in("post_id", postIds);
+
+      const counts: Record<string, number> = {};
+      commentData?.forEach((c) => {
+        counts[c.post_id] = (counts[c.post_id] || 0) + 1;
+      });
+
+      const postsWithCounts = data.map((p) => ({
+        ...p,
+        comment_count: counts[p.id] || 0,
+      }));
+
+      setPosts(postsWithCounts);
+    } else {
+      setPosts([]);
+    }
+
+    setLoading(false);
+  }
+
+  async function fetchComments(postId: string) {
+    const { data, error } = await supabase
+      .from("comments")
+      .select("*")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching comments:", error);
+      return;
+    }
+
+    setComments(data || []);
+  }
+
+  async function handleVote(e: React.MouseEvent, postId: string, voteType: "red" | "green") {
     e.stopPropagation();
     const currentVote = userVotes[postId];
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    let newRed = post.red_votes;
+    let newGreen = post.green_votes;
+    if (currentVote === "red") newRed -= 1;
+    if (currentVote === "green") newGreen -= 1;
+    if (currentVote !== voteType) {
+      if (voteType === "red") newRed += 1;
+      else newGreen += 1;
+    }
+
     setPosts((prev) =>
-      prev.map((post) => {
-        if (post.id !== postId) return post;
-        const updated = { ...post };
-        if (currentVote === "red") updated.red_votes -= 1;
-        if (currentVote === "green") updated.green_votes -= 1;
-        if (currentVote !== voteType) {
-          if (voteType === "red") updated.red_votes += 1;
-          else updated.green_votes += 1;
-        }
-        return updated;
-      })
+      prev.map((p) => (p.id === postId ? { ...p, red_votes: newRed, green_votes: newGreen } : p))
     );
-    setUserVotes((prev) => ({ ...prev, [postId]: currentVote === voteType ? null : voteType }));
-  };
 
-  const handleYellowClick = (e: React.MouseEvent, postId: string) => {
-    e.stopPropagation();
-    setOpenPost(postId);
-  };
+    const newVotes = { ...userVotes, [postId]: currentVote === voteType ? null : voteType };
+    setUserVotes(newVotes);
+    localStorage.setItem("flagspill_votes", JSON.stringify(newVotes));
 
-  const handleSubmit = () => {
-    if (!newPost.trim()) return;
-    const post = {
-      id: crypto.randomUUID(),
-      content: newPost.trim(),
-      red_votes: 0,
-      green_votes: 0,
-      created_at: new Date().toISOString(),
-      comment_count: 0,
-    };
-    setPosts([post, ...posts]);
-    setNewPost("");
-    setShowModal(false);
-  };
+    const { error } = await supabase
+      .from("posts")
+      .update({ red_votes: newRed, green_votes: newGreen })
+      .eq("id", postId);
+
+    if (error) {
+      console.error("Error updating vote:", error);
+      fetchPosts();
+    }
+  }
+
+  async function handleSubmit() {
+    if (!newPost.trim() || submitting) return;
+    setSubmitting(true);
+    setSubmitError("");
+
+    try {
+      const modResponse = await fetch("/api/moderate-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newPost.trim(), mode: "post" }),
+      });
+
+      const modResult = await modResponse.json();
+
+      if (!modResult.ok) {
+        setSubmitError(modResult.reason || "Couldn't post that.");
+        setSubmitting(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("posts")
+        .insert([{ content: newPost.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating post:", error);
+        setSubmitError("Couldn't save. Try again.");
+        setSubmitting(false);
+        return;
+      }
+
+      if (data) {
+        setPosts([{ ...data, comment_count: 0 }, ...posts]);
+      }
+
+      setNewPost("");
+      setShowModal(false);
+    } catch (e) {
+      console.error("Submit error:", e);
+      setSubmitError("Network error. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCommentSubmit() {
+    if (!newComment.trim() || !openPost || commentSubmitting) return;
+    setCommentSubmitting(true);
+
+    try {
+      const modResponse = await fetch("/api/moderate-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newComment.trim(), mode: "comment" }),
+      });
+
+      const modResult = await modResponse.json();
+      if (!modResult.ok) {
+        alert(modResult.reason || "Couldn't post that comment.");
+        setCommentSubmitting(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("comments")
+        .insert([{ post_id: openPost, content: newComment.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating comment:", error);
+        setCommentSubmitting(false);
+        return;
+      }
+
+      if (data) {
+        setComments([data, ...comments]);
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === openPost ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p
+          )
+        );
+      }
+
+      setNewComment("");
+    } finally {
+      setCommentSubmitting(false);
+    }
+  }
 
   const activePost = posts.find((p) => p.id === openPost);
+  const activeUserVote = activePost ? userVotes[activePost.id] : null;
 
   return (
-    <main className="min-h-screen bg-[#E8D5B7]">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-[#E8D5B7]/95 backdrop-blur-md border-b border-amber-300/40">
-        <div className="max-w-[1600px] mx-auto px-6 py-4">
-          <h1 className="text-3xl font-black text-stone-800 mb-3 tracking-tight flex items-center gap-2">
-            <RedFlag size={28} /> redflagged
-          </h1>
+    <main className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-stone-900" : "bg-[#E8D5B7]"}`}>
+      <style>{`
+        @keyframes flag-sway {
+          0%, 100% { transform: rotate(0deg); }
+          25% { transform: rotate(-7deg); }
+          50% { transform: rotate(0deg); }
+          75% { transform: rotate(7deg); }
+        }
+        .flag-sway {
+          animation: flag-sway 3s ease-in-out infinite;
+          transform-origin: 25% 90%;
+        }
+        @media (max-width: 639px) {
+          .post-card {
+            flex-basis: 130px !important;
+          }
+          .post-card-wide {
+            flex-basis: 100% !important;
+          }
+        }
+      `}</style>
+
+      <div className={`sticky top-0 z-10 backdrop-blur-md border-b transition-colors duration-300 ${darkMode ? "bg-stone-900/95 border-stone-700/60" : "bg-[#E8D5B7]/95 border-amber-300/40"}`}>
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4">
+          <div className="flex justify-between items-center mb-3 gap-3">
+            <h1 className={`text-3xl font-black tracking-tight flex items-center gap-2 select-none transition-colors duration-300 ${darkMode ? "text-amber-50" : "text-stone-800"}`}>
+              <span className="flex items-center -space-x-2">
+                <RedFlag size={26} />
+                <YellowFlag size={26} />
+                <GreenFlag size={26} />
+              </span>
+              flagspill
+            </h1>
+            <button
+              onClick={toggleDarkMode}
+              aria-label="Toggle dark mode"
+              className={`cursor-pointer w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 ${
+                darkMode
+                  ? "bg-stone-700 text-amber-200 hover:bg-stone-600"
+                  : "bg-white/70 text-stone-700 hover:bg-white hover:shadow-sm"
+              }`}
+            >
+              {darkMode ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {TABS.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
-                  activeTab === tab ? "bg-stone-800 text-white shadow-md" : "bg-white/70 text-stone-600 hover:bg-white"
+                className={`cursor-pointer px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-150 active:scale-95 ${
+                  activeTab === tab
+                    ? darkMode
+                      ? "bg-amber-200 text-stone-900 shadow-md"
+                      : "bg-stone-800 text-white shadow-md"
+                    : darkMode
+                      ? "bg-stone-800/70 text-stone-300 hover:bg-stone-800"
+                      : "bg-white/70 text-stone-600 hover:bg-white hover:shadow-sm"
                 }`}
               >
                 {tab}
@@ -142,125 +438,237 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Masonry feed - CSS columns so boxes hug their content */}
-      <div className="max-w-[1600px] mx-auto px-6 py-6 pb-32">
-        <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-4">
-          {posts.map((post) => {
-            const userVote = userVotes[post.id];
-            const yellow = isYellowFlag(post.red_votes, post.green_votes);
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 pb-32">
+        {loading ? (
+          <div className={`text-center py-12 transition-colors duration-300 ${darkMode ? "text-stone-400" : "text-stone-500"}`}>Loading flags...</div>
+        ) : posts.length === 0 ? (
+          <div className={`text-center py-12 transition-colors duration-300 ${darkMode ? "text-stone-400" : "text-stone-500"}`}>
+            <p className="text-lg mb-2">No flags yet</p>
+            <p className="text-sm">Be the first to spill one</p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-start gap-3 sm:gap-4">
+            {posts.map((post) => {
+              const userVote = userVotes[post.id];
+              const yellow = isYellowFlag(post.red_votes, post.green_votes);
+              const bgClass = getCardBgClass(post.red_votes, post.green_votes);
 
-            return (
-              <div
-                key={post.id}
-                onClick={() => setOpenPost(post.id)}
-                className="bg-white rounded-2xl p-4 shadow-sm cursor-pointer transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] mb-4 break-inside-avoid inline-block w-full"
-              >
-                <div className="flex justify-between items-center mb-2 text-xs text-stone-400">
-                  <span>anonymous · {timeAgo(post.created_at)}</span>
-                  <span className="flex items-center gap-1">💬 {post.comment_count}</span>
-                </div>
+              return (
+                <div
+                  key={post.id}
+                  onClick={() => setOpenPost(post.id)}
+                  style={{
+                    overflow: "hidden",
+                    flexGrow: 1,
+                    flexShrink: 1,
+                    flexBasis: `${getCardBasis(post.content)}px`,
+                  }}
+                  className={`post-card ${post.content.trim().length > 70 ? "post-card-wide" : ""} cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
+                >
+                  <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
+                    <span>anonymous · {timeAgo(post.created_at)}</span>
+                    <span className="flex items-center gap-1">💬 {post.comment_count || 0}</span>
+                  </div>
 
-                <p className="text-stone-800 text-[15px] leading-snug mb-3 font-medium">
-                  {post.content}
-                </p>
+                  <p style={wrapStyle} className={`text-stone-800 mb-3 ${getPostTextClass(post.content)}`}>
+                    {post.content}
+                  </p>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={(e) => handleVote(e, post.id, "red")}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all ${
-                      userVote === "red" ? "bg-red-500 text-white scale-105 shadow" : "bg-red-50 text-red-600 hover:bg-red-100"
-                    }`}
-                  >
-                    <RedFlag size={13} />
-                    <span>{post.red_votes}</span>
-                  </button>
-
-                  {yellow && (
+                  <div className="flex justify-between items-center relative gap-2">
                     <button
-                      onClick={(e) => handleYellowClick(e, post.id)}
-                      className="flex items-center justify-center w-8 h-8 rounded-full bg-yellow-300 shadow-md shadow-yellow-400/60 animate-pulse hover:animate-none hover:scale-110 transition-transform"
-                      title="Contested"
+                      onClick={(e) => handleVote(e, post.id, "red")}
+                      className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-150 active:scale-90 ${
+                        userVote === "red"
+                          ? "bg-red-500 text-white scale-105 shadow"
+                          : "bg-white/80 text-red-600 hover:bg-white hover:scale-105"
+                      }`}
                     >
-                      <YellowFlag size={14} />
+                      <RedFlag size={13} />
+                      <span>{post.red_votes}</span>
                     </button>
-                  )}
 
-                  <button
-                    onClick={(e) => handleVote(e, post.id, "green")}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all ${
-                      userVote === "green" ? "bg-emerald-500 text-white scale-105 shadow" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                    }`}
-                  >
-                    <span>{post.green_votes}</span>
-                    <GreenFlag size={13} />
-                  </button>
+                    {yellow && (
+                      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                        <div className="flag-sway">
+                          <YellowFlag size={24} />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={(e) => handleVote(e, post.id, "green")}
+                      className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-150 active:scale-90 ${
+                        userVote === "green"
+                          ? "bg-emerald-500 text-white scale-105 shadow"
+                          : "bg-white/80 text-emerald-600 hover:bg-white hover:scale-105"
+                      }`}
+                    >
+                      <span>{post.green_votes}</span>
+                      <GreenFlag size={13} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Floating add button */}
       <button
-        onClick={() => setShowModal(true)}
-        className="fixed bottom-6 right-6 bg-stone-800 hover:bg-stone-900 text-white rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 transition-all flex items-center gap-2 z-30"
+        onClick={() => {
+          setShowModal(true);
+          setSubmitError("");
+        }}
+        className={`cursor-pointer fixed bottom-6 right-6 rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all duration-150 flex items-center gap-2 z-30 ${
+          darkMode
+            ? "bg-amber-300 hover:bg-amber-400 text-stone-900"
+            : "bg-stone-800 hover:bg-stone-900 text-white"
+        }`}
       >
         <span className="text-lg">+</span>
-        <span className="text-sm">Add Flag</span>
+        <span className="text-sm">Spill a Flag</span>
       </button>
 
-      {/* Comments modal */}
       {activePost && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 flex items-end sm:items-center justify-center p-4" onClick={() => setOpenPost(null)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setOpenPost(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl max-h-[85vh] overflow-y-auto cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4 text-xs text-stone-400">
               <span>anonymous · {timeAgo(activePost.created_at)}</span>
-              <button onClick={() => setOpenPost(null)} className="text-stone-400 hover:text-stone-700 text-xl">✕</button>
+              <button
+                onClick={() => setOpenPost(null)}
+                className="cursor-pointer text-stone-400 hover:text-stone-700 hover:scale-110 active:scale-95 transition-all duration-150 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100"
+              >
+                ✕
+              </button>
             </div>
-            <p className="text-stone-800 text-lg leading-relaxed mb-4">{activePost.content}</p>
-            <div className="flex gap-2 mb-6 text-sm flex-wrap">
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 text-red-600 font-semibold">
+            <p style={wrapStyle} className="text-stone-800 text-lg leading-relaxed mb-4">
+              {activePost.content}
+            </p>
+            <div className="flex gap-2 mb-6 text-sm flex-wrap items-center">
+              <button
+                onClick={(e) => handleVote(e, activePost.id, "red")}
+                className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-all duration-150 active:scale-90 ${
+                  activeUserVote === "red"
+                    ? "bg-red-500 text-white scale-105 shadow"
+                    : "bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105"
+                }`}
+              >
                 <RedFlag size={14} /> {activePost.red_votes}
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 font-semibold">
+              </button>
+              <button
+                onClick={(e) => handleVote(e, activePost.id, "green")}
+                className={`cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-all duration-150 active:scale-90 ${
+                  activeUserVote === "green"
+                    ? "bg-emerald-500 text-white scale-105 shadow"
+                    : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105"
+                }`}
+              >
                 <GreenFlag size={14} /> {activePost.green_votes}
-              </span>
+              </button>
               {isYellowFlag(activePost.red_votes, activePost.green_votes) && (
-                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 font-semibold">
-                  <YellowFlag size={14} /> contested
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 font-semibold">
+                  <YellowFlag size={14} /> Yellow Flag
                 </span>
               )}
             </div>
             <div className="border-t border-stone-100 pt-4">
-              <h3 className="font-bold text-stone-800 mb-3">Comments ({activePost.comment_count})</h3>
+              <h3 className="font-bold text-stone-800 mb-3">Comments ({comments.length})</h3>
               <div className="space-y-3 mb-4">
-                <div className="bg-stone-50 rounded-2xl p-3 text-sm">
-                  <div className="text-xs text-stone-400 mb-1">anonymous · 1h</div>
-                  <div className="text-stone-700">comments will go here once wired up to db</div>
-                </div>
+                {comments.length === 0 ? (
+                  <div className="text-stone-400 text-sm text-center py-4">No comments yet. Be the first.</div>
+                ) : (
+                  comments.map((c) => (
+                    <div key={c.id} style={wrapStyle} className="bg-stone-50 rounded-2xl p-3 text-sm">
+                      <div className="text-xs text-stone-400 mb-1">anonymous · {timeAgo(c.created_at)}</div>
+                      <div className="text-stone-700">{c.content}</div>
+                    </div>
+                  ))
+                )}
               </div>
               <div className="flex gap-2">
-                <input type="text" placeholder="Add a comment..." className="flex-1 px-4 py-2 rounded-full bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 text-sm" />
-                <button className="px-4 py-2 rounded-full bg-stone-800 text-white text-sm font-semibold hover:bg-stone-900">Post</button>
+                <input
+                  type="text"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCommentSubmit()}
+                  placeholder="Add a comment..."
+                  disabled={commentSubmitting}
+                  className="flex-1 px-4 py-2 rounded-full bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 text-sm disabled:opacity-50"
+                />
+                <button
+                  onClick={handleCommentSubmit}
+                  disabled={!newComment.trim() || commentSubmitting}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-150 ${
+                    !newComment.trim() || commentSubmitting
+                      ? "bg-stone-300 text-white cursor-not-allowed"
+                      : "bg-stone-800 text-white hover:bg-stone-900 hover:scale-105 active:scale-95 cursor-pointer"
+                  }`}
+                >
+                  {commentSubmitting ? "..." : "Post"}
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* New post modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-end sm:items-center justify-center p-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl font-bold text-stone-800 mb-4">What's the red flag?</h2>
-            <textarea value={newPost} onChange={(e) => setNewPost(e.target.value)} placeholder="Spill it..." className="w-full h-32 p-4 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none text-stone-800" maxLength={280} autoFocus />
-            <div className="flex justify-between items-center mt-2 mb-4">
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl font-bold text-stone-800 mb-4">Spill the flag</h2>
+            <textarea
+              value={newPost}
+              onChange={(e) => {
+                setNewPost(e.target.value);
+                setSubmitError("");
+              }}
+              placeholder="What's the flag?"
+              className="w-full h-32 p-4 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none text-stone-800 disabled:opacity-50"
+              maxLength={280}
+              autoFocus
+              disabled={submitting}
+            />
+            <div className="flex justify-between items-center mt-2 mb-2">
               <span className="text-xs text-stone-400">{newPost.length}/280 · posted anonymously</span>
             </div>
+            {submitError && (
+              <div className="mb-3 p-3 rounded-2xl bg-red-50 text-red-700 text-sm">{submitError}</div>
+            )}
             <div className="flex gap-3">
-              <button onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-full font-semibold text-stone-600 hover:bg-stone-100 transition-colors">Cancel</button>
-              <button onClick={handleSubmit} disabled={!newPost.trim()} className="flex-1 py-3 rounded-full font-semibold bg-stone-800 text-white hover:bg-stone-900 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors">Post</button>
+              <button
+                onClick={() => setShowModal(false)}
+                disabled={submitting}
+                className={`flex-1 py-3 rounded-full font-semibold transition-all duration-150 ${
+                  submitting
+                    ? "text-stone-400 cursor-not-allowed"
+                    : "text-stone-600 hover:bg-stone-100 active:scale-95 cursor-pointer"
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!newPost.trim() || submitting}
+                className={`flex-1 py-3 rounded-full font-semibold transition-all duration-150 ${
+                  !newPost.trim() || submitting
+                    ? "bg-stone-300 text-white cursor-not-allowed"
+                    : "bg-stone-800 text-white hover:bg-stone-900 hover:scale-[1.02] active:scale-95 cursor-pointer"
+                }`}
+              >
+                {submitting ? "Checking..." : "Spill"}
+              </button>
             </div>
           </div>
         </div>
