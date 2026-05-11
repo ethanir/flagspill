@@ -272,7 +272,7 @@ export default function Home() {
       const modResponse = await fetch("/api/moderate-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: newPost.trim() }),
+        body: JSON.stringify({ text: newPost.trim(), mode: "post" }),
       });
 
       const modResult = await modResponse.json();
@@ -318,7 +318,7 @@ export default function Home() {
       const modResponse = await fetch("/api/moderate-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: newComment.trim() }),
+        body: JSON.stringify({ text: newComment.trim(), mode: "comment" }),
       });
 
       const modResult = await modResponse.json();
