@@ -155,6 +155,18 @@ export default function Home() {
     }
   }, [openPost]);
 
+  // Lock background scroll when any modal is open
+  useEffect(() => {
+    if (openPost || showModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [openPost, showModal]);
+
   function toggleDarkMode() {
     setDarkMode((prev) => {
       const next = !prev;
@@ -373,7 +385,10 @@ export default function Home() {
         }
         @media (max-width: 639px) {
           .post-card {
-            flex-basis: 120px !important;
+            flex-basis: 130px !important;
+          }
+          .post-card-wide {
+            flex-basis: 100% !important;
           }
         }
       `}</style>
@@ -443,7 +458,7 @@ export default function Home() {
                     flexShrink: 1,
                     flexBasis: `${getCardBasis(post.content)}px`,
                   }}
-                  className={`post-card cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
+                  className={`post-card ${post.content.trim().length > 70 ? "post-card-wide" : ""} cursor-pointer ${bgClass} rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 max-w-sm min-w-[140px]`}
                 >
                   <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
                     <span>anonymous · {timeAgo(post.created_at)}</span>
@@ -511,7 +526,7 @@ export default function Home() {
 
       {activePost && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 flex items-end sm:items-center justify-center p-4 cursor-pointer"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setOpenPost(null)}
         >
           <div
@@ -600,7 +615,7 @@ export default function Home() {
 
       {showModal && (
         <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-end sm:items-center justify-center p-4 cursor-pointer"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setShowModal(false)}
         >
           <div
