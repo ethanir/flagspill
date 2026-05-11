@@ -103,6 +103,23 @@ function GreenFlag({ size = 16 }: { size?: number }) {
   );
 }
 
+function MoonIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
+function SunIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("Hot");
   const [posts, setPosts] = useState<Post[]>([]);
@@ -116,6 +133,7 @@ export default function Home() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
     fetchPosts();
@@ -125,6 +143,8 @@ export default function Home() {
         setUserVotes(JSON.parse(stored));
       } catch {}
     }
+    const storedDark = localStorage.getItem("flagspill_dark");
+    if (storedDark === "true") setDarkMode(true);
   }, [activeTab]);
 
   useEffect(() => {
@@ -134,6 +154,14 @@ export default function Home() {
       setComments([]);
     }
   }, [openPost]);
+
+  function toggleDarkMode() {
+    setDarkMode((prev) => {
+      const next = !prev;
+      localStorage.setItem("flagspill_dark", next.toString());
+      return next;
+    });
+  }
 
   async function fetchPosts() {
     setLoading(true);
@@ -331,7 +359,7 @@ export default function Home() {
   const activeUserVote = activePost ? userVotes[activePost.id] : null;
 
   return (
-    <main className="min-h-screen bg-[#E8D5B7]">
+    <main className={`min-h-screen transition-colors duration-300 ${darkMode ? "bg-stone-900" : "bg-[#E8D5B7]"}`}>
       <style>{`
         @keyframes flag-sway {
           0%, 100% { transform: rotate(0deg); }
@@ -345,11 +373,24 @@ export default function Home() {
         }
       `}</style>
 
-      <div className="sticky top-0 z-10 bg-[#E8D5B7]/95 backdrop-blur-md border-b border-amber-300/40">
+      <div className={`sticky top-0 z-10 backdrop-blur-md border-b transition-colors duration-300 ${darkMode ? "bg-stone-900/95 border-stone-700/60" : "bg-[#E8D5B7]/95 border-amber-300/40"}`}>
         <div className="max-w-[1600px] mx-auto px-6 py-4">
-          <h1 className="text-3xl font-black text-stone-800 mb-3 tracking-tight flex items-center gap-2 select-none">
-            <RedFlag size={28} /> flagspill
-          </h1>
+          <div className="flex justify-between items-center mb-3 gap-3">
+            <h1 className={`text-3xl font-black tracking-tight flex items-center gap-2 select-none transition-colors duration-300 ${darkMode ? "text-amber-50" : "text-stone-800"}`}>
+              <RedFlag size={28} /> flagspill
+            </h1>
+            <button
+              onClick={toggleDarkMode}
+              aria-label="Toggle dark mode"
+              className={`cursor-pointer w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 ${
+                darkMode
+                  ? "bg-stone-700 text-amber-200 hover:bg-stone-600"
+                  : "bg-white/70 text-stone-700 hover:bg-white hover:shadow-sm"
+              }`}
+            >
+              {darkMode ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
             {TABS.map((tab) => (
               <button
@@ -357,8 +398,12 @@ export default function Home() {
                 onClick={() => setActiveTab(tab)}
                 className={`cursor-pointer px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-150 active:scale-95 ${
                   activeTab === tab
-                    ? "bg-stone-800 text-white shadow-md"
-                    : "bg-white/70 text-stone-600 hover:bg-white hover:shadow-sm"
+                    ? darkMode
+                      ? "bg-amber-200 text-stone-900 shadow-md"
+                      : "bg-stone-800 text-white shadow-md"
+                    : darkMode
+                      ? "bg-stone-800/70 text-stone-300 hover:bg-stone-800"
+                      : "bg-white/70 text-stone-600 hover:bg-white hover:shadow-sm"
                 }`}
               >
                 {tab}
@@ -370,9 +415,9 @@ export default function Home() {
 
       <div className="max-w-[1600px] mx-auto px-6 py-6 pb-32">
         {loading ? (
-          <div className="text-center text-stone-500 py-12">Loading flags...</div>
+          <div className={`text-center py-12 transition-colors duration-300 ${darkMode ? "text-stone-400" : "text-stone-500"}`}>Loading flags...</div>
         ) : posts.length === 0 ? (
-          <div className="text-center text-stone-500 py-12">
+          <div className={`text-center py-12 transition-colors duration-300 ${darkMode ? "text-stone-400" : "text-stone-500"}`}>
             <p className="text-lg mb-2">No flags yet</p>
             <p className="text-sm">Be the first to spill one</p>
           </div>
@@ -449,7 +494,11 @@ export default function Home() {
           setShowModal(true);
           setSubmitError("");
         }}
-        className="cursor-pointer fixed bottom-6 right-6 bg-stone-800 hover:bg-stone-900 text-white rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all duration-150 flex items-center gap-2 z-30"
+        className={`cursor-pointer fixed bottom-6 right-6 rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all duration-150 flex items-center gap-2 z-30 ${
+          darkMode
+            ? "bg-amber-300 hover:bg-amber-400 text-stone-900"
+            : "bg-stone-800 hover:bg-stone-900 text-white"
+        }`}
       >
         <span className="text-lg">+</span>
         <span className="text-sm">Spill a Flag</span>
