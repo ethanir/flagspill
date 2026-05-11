@@ -152,7 +152,9 @@ export default function Home() {
   // Auth state
   const [profile, setProfile] = useState<Profile | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [viewingProfile, setViewingProfile] = useState<Profile | null>(null);
+  const [viewingProfilePosts, setViewingProfilePosts] = useState<Post[]>([]);
+  const [viewingProfileLoading, setViewingProfileLoading] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -193,7 +195,7 @@ export default function Home() {
 
   // Lock background scroll when any modal is open
   useEffect(() => {
-    if (openPost || showModal || showAuthModal) {
+    if (openPost || showModal || showAuthModal || viewingProfile) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -201,7 +203,7 @@ export default function Home() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [openPost, showModal, showAuthModal]);
+  }, [openPost, showModal, showAuthModal, viewingProfile]);
 
   function toggleDarkMode() {
     setDarkMode((prev) => {
@@ -245,7 +247,41 @@ export default function Home() {
   async function handleSignOut() {
     await signOut();
     setProfile(null);
-    setShowProfileMenu(false);
+    setViewingProfile(null);
+  }
+
+  // Open a profile modal (own or someone else's). Fetches their posts.
+  async function openUserProfile(username: string) {
+    const cleaned = username.trim().toLowerCase().replace(/^@/, "");
+    setViewingProfileLoading(true);
+    setViewingProfilePosts([]);
+
+    const { data: prof, error: profErr } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("username", cleaned)
+      .single();
+
+    if (profErr || !prof) {
+      setViewingProfileLoading(false);
+      return;
+    }
+
+    setViewingProfile(prof as Profile);
+
+    // If viewing own profile, sync the cached karma to whatever the DB says
+    if (profile && profile.id === prof.id) {
+      setProfile(prof as Profile);
+    }
+
+    const { data: userPosts } = await supabase
+      .from("posts")
+      .select("*, author:profiles!posts_author_id_fkey(username)")
+      .eq("author_id", prof.id)
+      .order("created_at", { ascending: false });
+
+    setViewingProfilePosts((userPosts as Post[]) || []);
+    setViewingProfileLoading(false);
   }
 
   async function fetchPosts() {
@@ -490,7 +526,9 @@ export default function Home() {
     }
   }
 
-  const activePost = posts.find((p) => p.id === openPost);
+  const activePost =
+    posts.find((p) => p.id === openPost) ||
+    viewingProfilePosts.find((p) => p.id === openPost);
   const activeUserVote = activePost ? userVotes[activePost.id] : null;
 
   return (
@@ -529,8 +567,8 @@ export default function Home() {
             </h1>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => (profile ? setShowProfileMenu((s) => !s) : openAuthModal("signin"))}
-                aria-label={profile ? "Profile menu" : "Sign in"}
+                onClick={() => (profile ? openUserProfile(profile.username) : openAuthModal("signin"))}
+                aria-label={profile ? "Your profile" : "Sign in"}
                 className={`cursor-pointer h-10 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 ${
                   profile ? "px-3 gap-2" : "w-10"
                 } ${
@@ -607,7 +645,15 @@ export default function Home() {
                   <div className="flex justify-between items-center mb-2 text-xs text-stone-500 select-none gap-3">
                     <span>
                       {post.author?.username ? (
-                        <span className="font-semibold text-stone-700">@{post.author.username}</span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openUserProfile(post.author!.username);
+                          }}
+                          className="font-semibold text-stone-700 hover:text-stone-900 hover:underline cursor-pointer"
+                        >
+                          @{post.author.username}
+                        </span>
                       ) : (
                         "anonymous"
                       )}{" "}
@@ -687,7 +733,12 @@ export default function Home() {
             <div className="flex justify-between items-center mb-4 text-xs text-stone-400">
               <span>
                 {activePost.author?.username ? (
-                  <span className="font-semibold text-stone-700">@{activePost.author.username}</span>
+                  <span
+                    onClick={() => openUserProfile(activePost.author!.username)}
+                    className="font-semibold text-stone-700 hover:text-stone-900 hover:underline cursor-pointer"
+                  >
+                    @{activePost.author.username}
+                  </span>
                 ) : (
                   "anonymous"
                 )}{" "}
@@ -740,7 +791,12 @@ export default function Home() {
                     <div key={c.id} style={wrapStyle} className="bg-stone-50 rounded-2xl p-3 text-sm">
                       <div className="text-xs text-stone-400 mb-1">
                         {c.author?.username ? (
-                          <span className="font-semibold text-stone-700">@{c.author.username}</span>
+                          <span
+                            onClick={() => openUserProfile(c.author!.username)}
+                            className="font-semibold text-stone-700 hover:text-stone-900 hover:underline cursor-pointer"
+                          >
+                            @{c.author.username}
+                          </span>
                         ) : (
                           "anonymous"
                         )}{" "}
@@ -923,28 +979,101 @@ export default function Home() {
         </div>
       )}
 
-      {/* Profile dropdown (when logged in and toggled) */}
-      {profile && showProfileMenu && (
+      {/* Profile modal (own or someone else's) */}
+      {viewingProfile && (
         <div
-          className="fixed inset-0 z-30 cursor-pointer"
-          onClick={() => setShowProfileMenu(false)}
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setViewingProfile(null)}
         >
           <div
-            className="absolute right-4 top-20 bg-white rounded-2xl p-4 shadow-2xl w-64 cursor-default"
+            className="bg-white rounded-3xl w-full max-w-xl shadow-2xl max-h-[85vh] flex flex-col cursor-default"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-3 pb-3 border-b border-stone-100">
-              <div className="font-bold text-stone-800">@{profile.username}</div>
-              <div className="text-xs text-stone-500 mt-0.5">
-                <span className="text-amber-700 font-bold">{profile.karma}</span> karma
+            {/* Header */}
+            <div className="p-6 pb-4 border-b border-stone-100">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <div className="text-2xl font-black text-stone-800">@{viewingProfile.username}</div>
+                  <div className="text-xs text-stone-400 mt-1">
+                    member since {new Date(viewingProfile.created_at).toLocaleDateString(undefined, { month: "short", year: "numeric" })}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewingProfile(null)}
+                  className="cursor-pointer text-stone-400 hover:text-stone-700 hover:scale-110 active:scale-95 transition-all duration-150 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex gap-4 text-sm">
+                <div>
+                  <span className="font-bold text-amber-700">{viewingProfile.karma}</span>
+                  <span className="text-stone-500 ml-1">karma</span>
+                </div>
+                <div>
+                  <span className="font-bold text-stone-800">{viewingProfilePosts.length}</span>
+                  <span className="text-stone-500 ml-1">posts</span>
+                </div>
               </div>
             </div>
-            <button
-              onClick={handleSignOut}
-              className="cursor-pointer w-full text-left text-sm text-stone-600 hover:bg-stone-100 rounded-lg px-3 py-2 transition-colors"
-            >
-              Sign out
-            </button>
+
+            {/* Posts list */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {viewingProfileLoading ? (
+                <div className="text-center text-stone-400 py-8 text-sm">loading...</div>
+              ) : viewingProfilePosts.length === 0 ? (
+                <div className="text-center text-stone-400 py-8 text-sm">no posts yet</div>
+              ) : (
+                <div className="space-y-2">
+                  {viewingProfilePosts.map((p) => {
+                    const total = p.red_votes + p.green_votes;
+                    const redPct = total > 0 ? p.red_votes / total : 0;
+                    const greenPct = total > 0 ? p.green_votes / total : 0;
+                    let bg = "bg-stone-50";
+                    if (total > 0) {
+                      if (redPct > 0.6) bg = "bg-red-50";
+                      else if (greenPct > 0.6) bg = "bg-emerald-50";
+                      else bg = "bg-amber-50";
+                    }
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setViewingProfile(null);
+                          setOpenPost(p.id);
+                        }}
+                        className={`${bg} rounded-2xl p-3 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-150`}
+                      >
+                        <p style={wrapStyle} className="text-stone-800 text-sm font-medium mb-2">
+                          {p.content}
+                        </p>
+                        <div className="flex items-center gap-3 text-xs text-stone-500">
+                          <span className="flex items-center gap-1">
+                            <RedFlag size={12} /> {p.red_votes}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <GreenFlag size={12} /> {p.green_votes}
+                          </span>
+                          <span className="ml-auto">{timeAgo(p.created_at)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer — sign out only on own profile */}
+            {profile && profile.id === viewingProfile.id && (
+              <div className="p-4 border-t border-stone-100">
+                <button
+                  onClick={handleSignOut}
+                  className="cursor-pointer w-full py-2 rounded-full text-sm text-stone-600 hover:bg-stone-100 transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
