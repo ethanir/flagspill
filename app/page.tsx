@@ -84,6 +84,7 @@ export default function Home() {
   const [openPost, setOpenPost] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   useEffect(() => {
     fetchPosts();
@@ -214,7 +215,6 @@ export default function Home() {
     setSubmitError("");
 
     try {
-      // Run moderation check first
       const modResponse = await fetch("/api/moderate-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,7 +229,6 @@ export default function Home() {
         return;
       }
 
-      // Moderation passed - save to db
       const { data, error } = await supabase
         .from("posts")
         .insert([{ content: newPost.trim() }])
@@ -258,42 +257,48 @@ export default function Home() {
   }
 
   async function handleCommentSubmit() {
-    if (!newComment.trim() || !openPost) return;
+    if (!newComment.trim() || !openPost || commentSubmitting) return;
+    setCommentSubmitting(true);
 
-    // Also moderate comments
-    const modResponse = await fetch("/api/moderate-post", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: newComment.trim() }),
-    });
+    try {
+      const modResponse = await fetch("/api/moderate-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: newComment.trim() }),
+      });
 
-    const modResult = await modResponse.json();
-    if (!modResult.ok) {
-      alert(modResult.reason || "Couldn't post that comment.");
-      return;
+      const modResult = await modResponse.json();
+      if (!modResult.ok) {
+        alert(modResult.reason || "Couldn't post that comment.");
+        setCommentSubmitting(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("comments")
+        .insert([{ post_id: openPost, content: newComment.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating comment:", error);
+        setCommentSubmitting(false);
+        return;
+      }
+
+      if (data) {
+        setComments([data, ...comments]);
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === openPost ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p
+          )
+        );
+      }
+
+      setNewComment("");
+    } finally {
+      setCommentSubmitting(false);
     }
-
-    const { data, error } = await supabase
-      .from("comments")
-      .insert([{ post_id: openPost, content: newComment.trim() }])
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error creating comment:", error);
-      return;
-    }
-
-    if (data) {
-      setComments([data, ...comments]);
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === openPost ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p
-        )
-      );
-    }
-
-    setNewComment("");
   }
 
   const activePost = posts.find((p) => p.id === openPost);
@@ -302,7 +307,7 @@ export default function Home() {
     <main className="min-h-screen bg-[#E8D5B7]">
       <div className="sticky top-0 z-10 bg-[#E8D5B7]/95 backdrop-blur-md border-b border-amber-300/40">
         <div className="max-w-[1600px] mx-auto px-6 py-4">
-          <h1 className="text-3xl font-black text-stone-800 mb-3 tracking-tight flex items-center gap-2">
+          <h1 className="text-3xl font-black text-stone-800 mb-3 tracking-tight flex items-center gap-2 select-none">
             <RedFlag size={28} /> flagspill
           </h1>
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
@@ -310,8 +315,10 @@ export default function Home() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
-                  activeTab === tab ? "bg-stone-800 text-white shadow-md" : "bg-white/70 text-stone-600 hover:bg-white"
+                className={`cursor-pointer px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-150 active:scale-95 ${
+                  activeTab === tab
+                    ? "bg-stone-800 text-white shadow-md"
+                    : "bg-white/70 text-stone-600 hover:bg-white hover:shadow-sm"
                 }`}
               >
                 {tab}
@@ -340,9 +347,9 @@ export default function Home() {
                   key={post.id}
                   onClick={() => setOpenPost(post.id)}
                   style={{ overflow: "hidden", maxWidth: "100%" }}
-                  className="bg-white rounded-2xl p-4 shadow-sm cursor-pointer transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] mb-4 break-inside-avoid block w-full"
+                  className="cursor-pointer bg-white rounded-2xl p-4 shadow-sm transition-all duration-200 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02] active:scale-100 mb-4 break-inside-avoid block w-full"
                 >
-                  <div className="flex justify-between items-center mb-2 text-xs text-stone-400">
+                  <div className="flex justify-between items-center mb-2 text-xs text-stone-400 select-none">
                     <span>anonymous · {timeAgo(post.created_at)}</span>
                     <span className="flex items-center gap-1">💬 {post.comment_count || 0}</span>
                   </div>
@@ -354,8 +361,10 @@ export default function Home() {
                   <div className="flex justify-between items-center relative">
                     <button
                       onClick={(e) => handleVote(e, post.id, "red")}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all ${
-                        userVote === "red" ? "bg-red-500 text-white scale-105 shadow" : "bg-red-50 text-red-600 hover:bg-red-100"
+                      className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-150 active:scale-90 ${
+                        userVote === "red"
+                          ? "bg-red-500 text-white scale-105 shadow"
+                          : "bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105"
                       }`}
                     >
                       <RedFlag size={13} />
@@ -365,8 +374,8 @@ export default function Home() {
                     {yellow && (
                       <button
                         onClick={(e) => handleYellowClick(e, post.id)}
-                        className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-8 h-8 rounded-full bg-yellow-300 shadow-md shadow-yellow-400/60 animate-pulse hover:animate-none hover:scale-110 transition-transform"
-                        title="Contested"
+                        className="cursor-pointer absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-8 h-8 rounded-full bg-yellow-300 shadow-md shadow-yellow-400/60 animate-pulse hover:animate-none hover:scale-110 active:scale-95 transition-transform duration-150"
+                        title="Contested - tap to see comments"
                       >
                         <YellowFlag size={14} />
                       </button>
@@ -374,8 +383,10 @@ export default function Home() {
 
                     <button
                       onClick={(e) => handleVote(e, post.id, "green")}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all ${
-                        userVote === "green" ? "bg-emerald-500 text-white scale-105 shadow" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                      className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-semibold text-xs transition-all duration-150 active:scale-90 ${
+                        userVote === "green"
+                          ? "bg-emerald-500 text-white scale-105 shadow"
+                          : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105"
                       }`}
                     >
                       <span>{post.green_votes}</span>
@@ -394,20 +405,33 @@ export default function Home() {
           setShowModal(true);
           setSubmitError("");
         }}
-        className="fixed bottom-6 right-6 bg-stone-800 hover:bg-stone-900 text-white rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 transition-all flex items-center gap-2 z-30"
+        className="cursor-pointer fixed bottom-6 right-6 bg-stone-800 hover:bg-stone-900 text-white rounded-full px-5 py-3 font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all duration-150 flex items-center gap-2 z-30"
       >
         <span className="text-lg">+</span>
         <span className="text-sm">Spill a Flag</span>
       </button>
 
       {activePost && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 flex items-end sm:items-center justify-center p-4" onClick={() => setOpenPost(null)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 flex items-end sm:items-center justify-center p-4 cursor-pointer"
+          onClick={() => setOpenPost(null)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl max-h-[85vh] overflow-y-auto cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4 text-xs text-stone-400">
               <span>anonymous · {timeAgo(activePost.created_at)}</span>
-              <button onClick={() => setOpenPost(null)} className="text-stone-400 hover:text-stone-700 text-xl">✕</button>
+              <button
+                onClick={() => setOpenPost(null)}
+                className="cursor-pointer text-stone-400 hover:text-stone-700 hover:scale-110 active:scale-95 transition-all duration-150 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100"
+              >
+                ✕
+              </button>
             </div>
-            <p style={wrapStyle} className="text-stone-800 text-lg leading-relaxed mb-4">{activePost.content}</p>
+            <p style={wrapStyle} className="text-stone-800 text-lg leading-relaxed mb-4">
+              {activePost.content}
+            </p>
             <div className="flex gap-2 mb-6 text-sm flex-wrap">
               <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 text-red-600 font-semibold">
                 <RedFlag size={14} /> {activePost.red_votes}
@@ -442,14 +466,19 @@ export default function Home() {
                   onChange={(e) => setNewComment(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleCommentSubmit()}
                   placeholder="Add a comment..."
-                  className="flex-1 px-4 py-2 rounded-full bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 text-sm"
+                  disabled={commentSubmitting}
+                  className="flex-1 px-4 py-2 rounded-full bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 text-sm disabled:opacity-50"
                 />
                 <button
                   onClick={handleCommentSubmit}
-                  disabled={!newComment.trim()}
-                  className="px-4 py-2 rounded-full bg-stone-800 text-white text-sm font-semibold hover:bg-stone-900 disabled:bg-stone-300"
+                  disabled={!newComment.trim() || commentSubmitting}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-150 ${
+                    !newComment.trim() || commentSubmitting
+                      ? "bg-stone-300 text-white cursor-not-allowed"
+                      : "bg-stone-800 text-white hover:bg-stone-900 hover:scale-105 active:scale-95 cursor-pointer"
+                  }`}
                 >
-                  Post
+                  {commentSubmitting ? "..." : "Post"}
                 </button>
               </div>
             </div>
@@ -458,8 +487,14 @@ export default function Home() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-end sm:items-center justify-center p-4" onClick={() => setShowModal(false)}>
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-30 flex items-end sm:items-center justify-center p-4 cursor-pointer"
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="text-xl font-bold text-stone-800 mb-4">Spill the flag</h2>
             <textarea
               value={newPost}
@@ -468,9 +503,10 @@ export default function Home() {
                 setSubmitError("");
               }}
               placeholder="What's the flag?"
-              className="w-full h-32 p-4 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none text-stone-800"
+              className="w-full h-32 p-4 rounded-2xl bg-stone-50 border border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-300 resize-none text-stone-800 disabled:opacity-50"
               maxLength={280}
               autoFocus
+              disabled={submitting}
             />
             <div className="flex justify-between items-center mt-2 mb-2">
               <span className="text-xs text-stone-400">{newPost.length}/280 · posted anonymously</span>
@@ -482,14 +518,22 @@ export default function Home() {
               <button
                 onClick={() => setShowModal(false)}
                 disabled={submitting}
-                className="flex-1 py-3 rounded-full font-semibold text-stone-600 hover:bg-stone-100 transition-colors disabled:opacity-50"
+                className={`flex-1 py-3 rounded-full font-semibold transition-all duration-150 ${
+                  submitting
+                    ? "text-stone-400 cursor-not-allowed"
+                    : "text-stone-600 hover:bg-stone-100 active:scale-95 cursor-pointer"
+                }`}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={!newPost.trim() || submitting}
-                className="flex-1 py-3 rounded-full font-semibold bg-stone-800 text-white hover:bg-stone-900 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors"
+                className={`flex-1 py-3 rounded-full font-semibold transition-all duration-150 ${
+                  !newPost.trim() || submitting
+                    ? "bg-stone-300 text-white cursor-not-allowed"
+                    : "bg-stone-800 text-white hover:bg-stone-900 hover:scale-[1.02] active:scale-95 cursor-pointer"
+                }`}
               >
                 {submitting ? "Checking..." : "Spill"}
               </button>
